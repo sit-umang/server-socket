@@ -1,59 +1,62 @@
 const WebSocket = require('ws');
-const Cloudinary = require('cloudinary');
+const Cloudinary = require('cloudinary').v2;
 
-const wss = new WebSocket.Server({ port: process.env.PORT || 8080 }, () => {
-  console.log('Server started...');
+const port = process.env.PORT || 8080;
+const wss = new WebSocket.Server({ port }, () => {
+  console.log(`Server started on port ${port}`);
 });
 
-let ws;
 let clients = {};
 
-wss.on('connection', (server) => {
-  ws = server;
-  const client = ws.upgradeReq.headers['sec-websocket-key'];
+wss.on('connection', (ws, req) => {
+  const client = req.headers['sec-websocket-key'];
   clients[client] = ws;
-  ws.on('message', (msg, data) => receive(msg, data, client));
-  ws.on('close', (socket, number, reason) =>
-    console.log('Closed: ', client, socket, number, reason),
-  );
+  ws.on('message', (msg) => receive(msg, client));
+  ws.on('close', () => {
+    delete clients[client];
+    console.log(`Closed connection: ${client}`);
+  });
 });
 
 const send = (msg, client) => {
-  console.log('Sending: ', msg);
-  clients[client].send(JSON.stringify(msg), (error) => {
-    if (error) {
-      delete clients[client];
-    } else {
-      console.log(`Sent: ${msg}, to ${client}`);
-    }
-  });
+  if (clients[client]) {
+    clients[client].send(JSON.stringify(msg), (error) => {
+      if (error) {
+        delete clients[client];
+        console.log(`Error sending message to ${client}:`, error);
+      } else {
+        console.log(`Sent message to ${client}:`, msg);
+      }
+    });
+  }
 };
 
-const receive = (msg, data, sender) => {
-  console.log(`Received: ${msg.substring(0, 500)}, from ${sender}`);
+const receive = (msg, sender) => {
+  console.log(`Received message from ${sender}:`, msg);
   broadcast(msg, sender);
 };
 
 const broadcast = (msg, sender) => {
-  msg = JSON.parse(msg);
-  Object.keys(clients).map((client) => {
-    if (client === sender) {
-      return;
-    } else if (msg.image !== undefined) {
-      Cloudinary.v2.uploader.unsigned_upload(
-        `data:image/jpeg;base64,${msg.image}`,
-        'myPreset',
-        { cloud_name: 'zafer' },
-        (_err, result) => {
-          console.log('Uploaded URL: ' + result.url);
-          msg.image = result.url;
-          msg.text = undefined;
-          msg.timestamp = new Date().getTime();
-          send(msg, client);
-        },
-      );
-    } else {
-      send(msg, client);
+  const message = JSON.parse(msg);
+  Object.keys(clients).forEach((client) => {
+    if (client !== sender) {
+      if (message.image) {
+        Cloudinary.uploader.unsigned_upload(
+          `data:image/jpeg;base64,${message.image}`,
+          'myPreset',
+          { cloud_name: 'zafer' },
+          (err, result) => {
+            if (result) {
+              message.image = result.url;
+              send(message, client);
+            } else {
+              console.error('Image upload error:', err);
+            }
+          }
+        );
+      } else {
+        send(message, client);
+      }
     }
   });
 };
