@@ -1,11 +1,11 @@
 const WebSocket = require('ws');
 const Cloudinary = require('cloudinary').v2;
 
-
+// Cloudinary configuration
 Cloudinary.config({
-  cloud_name: 'dtngugfk0', 
-  api_key: '629878265372427', 
-  api_secret: '6u7oxWyT78FkCdDjYmNp_o6AR-o', 
+  cloud_name: 'dtngugfk0',
+  api_key: '629878265372427',
+  api_secret: '6u7oxWyT78FkCdDjYmNp_o6AR-o',
 });
 
 const port = process.env.PORT || 10000;
@@ -19,14 +19,30 @@ wss.on('connection', (ws, req) => {
   let username;
 
   ws.on('message', (msg) => {
-    const message = JSON.parse(msg);
+    let message;
 
-    if (message.type === 'register') {
-      username = message.username;
-      clients[username] = ws;
-      console.log(`User ${username} connected`);
-    } else if (message.type === 'message') {
-      handleMessage(message);
+    // Error handling for JSON parsing
+    try {
+      message = JSON.parse(msg);
+    } catch (error) {
+      console.error('Failed to parse message:', error);
+      return;
+    }
+
+    // Log the received message
+    console.log('Received message:', message);
+
+    switch (message.type) {
+      case 'register':
+        username = message.username;
+        clients[username] = ws;
+        console.log(`User ${username} connected`);
+        break;
+      case 'message':
+        handleMessage(message);
+        break;
+      default:
+        console.error('Unknown message type:', message.type);
     }
   });
 
@@ -46,15 +62,13 @@ const handleMessage = (message) => {
   const { to, from, text, image } = message;
 
   if (image) {
-    // Upload image to Cloudinary
     Cloudinary.uploader.unsigned_upload(
       `data:image/jpeg;base64,${image}`,
-      'umang_unsigned', 
+      'umang_unsigned',
       (err, result) => {
         if (err) {
           console.error('Image upload error:', err);
         } else {
-          // Update message with Cloudinary URL
           const updatedMessage = { ...message, image: result.url, text: undefined };
           sendToClient(to, updatedMessage);
         }
