@@ -1,7 +1,6 @@
 const WebSocket = require('ws');
 const Cloudinary = require('cloudinary').v2;
 
-// Cloudinary configuration
 Cloudinary.config({
   cloud_name: 'dtngugfk0',
   api_key: '629878265372427',
@@ -20,17 +19,12 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', (msg) => {
     let message;
-
-    // Error handling for JSON parsing
     try {
       message = JSON.parse(msg);
     } catch (error) {
-      console.error('Failed to parse message:', error);
+      console.error('Failed to parse message:', msg, error);
       return;
     }
-
-    // Log the received message
-    console.log('Received message:', message);
 
     switch (message.type) {
       case 'register':
@@ -42,7 +36,7 @@ wss.on('connection', (ws, req) => {
         handleMessage(message);
         break;
       default:
-        console.error('Unknown message type:', message.type);
+        console.log('Unknown message type:', message.type);
     }
   });
 
@@ -62,6 +56,7 @@ const handleMessage = (message) => {
   const { to, from, text, image } = message;
 
   if (image) {
+    // Upload image to Cloudinary
     Cloudinary.uploader.unsigned_upload(
       `data:image/jpeg;base64,${image}`,
       'umang_unsigned',
@@ -69,6 +64,7 @@ const handleMessage = (message) => {
         if (err) {
           console.error('Image upload error:', err);
         } else {
+          // Update message with Cloudinary URL
           const updatedMessage = { ...message, image: result.url, text: undefined };
           sendToClient(to, updatedMessage);
         }
@@ -85,6 +81,8 @@ const sendToClient = (username, message) => {
     clientWs.send(JSON.stringify(message), (error) => {
       if (error) {
         console.error(`Failed to send message to ${username}:`, error);
+      } else {
+        console.log(`Message sent to ${username}:`, message);
       }
     });
   } else {
