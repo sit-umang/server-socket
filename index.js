@@ -1,62 +1,79 @@
 const WebSocket = require('ws');
 const Cloudinary = require('cloudinary').v2;
 
-const port = process.env.PORT || 8080;
+
+Cloudinary.config({
+  cloud_name: 'dtngugfk0', 
+  api_key: '629878265372427', 
+  api_secret: '6u7oxWyT78FkCdDjYmNp_o6AR-o', 
+});
+
+const port = process.env.PORT || 10000;
 const wss = new WebSocket.Server({ port }, () => {
   console.log(`Server started on port ${port}`);
 });
 
-let clients = {};
+const clients = {};
 
 wss.on('connection', (ws, req) => {
-  const client = req.headers['sec-websocket-key'];
-  clients[client] = ws;
-  ws.on('message', (msg) => receive(msg, client));
+  let username;
+
+  ws.on('message', (msg) => {
+    const message = JSON.parse(msg);
+
+    if (message.type === 'register') {
+      username = message.username;
+      clients[username] = ws;
+      console.log(`User ${username} connected`);
+    } else if (message.type === 'message') {
+      handleMessage(message);
+    }
+  });
+
   ws.on('close', () => {
-    delete clients[client];
-    console.log(`Closed connection: ${client}`);
+    if (username) {
+      delete clients[username];
+      console.log(`User ${username} disconnected`);
+    }
+  });
+
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
   });
 });
 
-const send = (msg, client) => {
-  if (clients[client]) {
-    clients[client].send(JSON.stringify(msg), (error) => {
-      if (error) {
-        delete clients[client];
-        console.log(`Error sending message to ${client}:`, error);
-      } else {
-        console.log(`Sent message to ${client}:`, msg);
+const handleMessage = (message) => {
+  const { to, from, text, image } = message;
+
+  if (image) {
+    // Upload image to Cloudinary
+    Cloudinary.uploader.unsigned_upload(
+      `data:image/jpeg;base64,${image}`,
+      'umang_unsigned', 
+      (err, result) => {
+        if (err) {
+          console.error('Image upload error:', err);
+        } else {
+          // Update message with Cloudinary URL
+          const updatedMessage = { ...message, image: result.url, text: undefined };
+          sendToClient(to, updatedMessage);
+        }
       }
-    });
+    );
+  } else {
+    sendToClient(to, message);
   }
 };
 
-const receive = (msg, sender) => {
-  console.log(`Received message from ${sender}:`, msg);
-  broadcast(msg, sender);
-};
-
-const broadcast = (msg, sender) => {
-  const message = JSON.parse(msg);
-  Object.keys(clients).forEach((client) => {
-    if (client !== sender) {
-      if (message.image) {
-        Cloudinary.uploader.unsigned_upload(
-          `data:image/jpeg;base64,${message.image}`,
-          'myPreset',
-          { cloud_name: 'zafer' },
-          (err, result) => {
-            if (result) {
-              message.image = result.url;
-              send(message, client);
-            } else {
-              console.error('Image upload error:', err);
-            }
-          }
-        );
-      } else {
-        send(message, client);
+const sendToClient = (username, message) => {
+  const clientWs = clients[username];
+  if (clientWs) {
+    clientWs.send(JSON.stringify(message), (error) => {
+      if (error) {
+        console.error(`Failed to send message to ${username}:`, error);
       }
-    }
-  });
+    });
+  } else {
+    console.log(`Client ${username} not connected`);
+  }
 };
